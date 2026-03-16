@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexChat</title>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f1117;
+      --bg2: #1a1d27;
+      --bg3: #232636;
+      --accent: #6c63ff;
+      --accent2: #8b7ff8;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --border: #2d3048;
+      --green: #22c55e;
+      --red: #ef4444;
+      --bubble-me: #6c63ff;
+      --bubble-other: #232636;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Auth Screen ── */
+    #auth-screen { display: flex; align-items: center; justify-content: center; height: 100vh; background: radial-gradient(ellipse at center, #1a1d2f 0%, #0f1117 70%); }
+    .auth-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 40px; width: 400px; max-width: 95vw; }
+    .auth-logo { text-align: center; margin-bottom: 32px; }
+    .auth-logo h1 { font-size: 2.2rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .auth-logo p { color: var(--text2); margin-top: 4px; font-size: 0.9rem; }
+    .auth-tabs { display: flex; background: var(--bg3); border-radius: 10px; padding: 4px; margin-bottom: 24px; }
+    .auth-tab { flex: 1; padding: 8px; text-align: center; border-radius: 8px; cursor: pointer; font-size: 0.85rem; color: var(--text2); transition: all 0.2s; }
+    .auth-tab.active { background: var(--accent); color: white; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 0.8rem; color: var(--text2); margin-bottom: 6px; }
+    .form-group input { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
+    .form-group input:focus { border-color: var(--accent); }
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; cursor: pointer; font-size: 0.95rem; font-weight: 600; transition: all 0.2s; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+    .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); margin-top: 8px; }
+    .btn-secondary:hover { border-color: var(--accent); }
+    .auth-msg { text-align: center; font-size: 0.8rem; color: var(--text2); margin-top: 12px; }
+    .otp-hint { background: var(--bg3); border: 1px solid var(--accent); border-radius: 8px; padding: 10px; margin: 10px 0; font-size: 0.8rem; color: var(--accent); }
+
+    /* ── Main App ── */
+    #app { display: none; height: 100vh; flex-direction: column; }
+    .topbar { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .topbar-logo { font-size: 1.3rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .topbar-user { display: flex; align-items: center; gap: 10px; }
+    .topbar-user .nex-id { font-size: 0.75rem; color: var(--accent); background: rgba(108,99,255,0.1); padding: 3px 8px; border-radius: 20px; border: 1px solid rgba(108,99,255,0.3); }
+    .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; color: white; flex-shrink: 0; overflow: hidden; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    .sidebar { width: 320px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+    .icon-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text2); cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; }
+    .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .search-box { position: relative; }
+    .search-box input { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px 10px 36px; color: var(--text); font-size: 0.85rem; outline: none; }
+    .search-box input:focus { border-color: var(--accent); }
+    .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text2); font-size: 0.9rem; }
+    .chat-list { flex: 1; overflow-y: auto; }
+    .chat-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.15s; }
+    .chat-item:hover { background: var(--bg3); }
+    .chat-item.active { background: rgba(108,99,255,0.1); border-left: 3px solid var(--accent); }
+    .chat-info { flex: 1; min-width: 0; }
+    .chat-name { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-last { font-size: 0.78rem; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+    .chat-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .chat-time { font-size: 0.7rem; color: var(--text2); }
+    .unread-badge { background: var(--accent); color: white; border-radius: 10px; padding: 2px 7px; font-size: 0.7rem; font-weight: 700; }
+    .online-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); border: 2px solid var(--bg2); flex-shrink: 0; }
+
+    /* ── Chat Area ── */
+    .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .chat-header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .chat-header-info { flex: 1; }
+    .chat-header-name { font-weight: 700; font-size: 1rem; }
+    .chat-header-status { font-size: 0.78rem; color: var(--text2); }
+    .chat-header-status.online { color: var(--green); }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+    .msg { display: flex; gap: 10px; max-width: 75%; }
+    .msg.me { align-self: flex-end; flex-direction: row-reverse; }
+    .msg-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; color: var(--text2); }
+    .msg-content { background: var(--bubble-other); border-radius: 16px; padding: 10px 14px; border-bottom-left-radius: 4px; max-width: 100%; }
+    .msg.me .msg-content { background: var(--bubble-me); border-bottom-left-radius: 16px; border-bottom-right-radius: 4px; }
+    .msg-text { font-size: 0.9rem; line-height: 1.5; word-break: break-word; }
+    .msg-time { font-size: 0.68rem; color: rgba(255,255,255,0.5); margin-top: 5px; text-align: right; }
+    .msg-sender { font-size: 0.72rem; color: var(--accent2); margin-bottom: 3px; font-weight: 600; }
+    .msg-image { max-width: 220px; border-radius: 10px; cursor: pointer; }
+    .msg-file { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 12px; cursor: pointer; text-decoration: none; color: inherit; }
+    .msg-file-icon { font-size: 1.5rem; }
+    .msg-file-info { }
+    .msg-file-name { font-size: 0.8rem; font-weight: 600; }
+    .msg-file-size { font-size: 0.7rem; color: var(--text2); }
+    .typing-indicator { font-size: 0.78rem; color: var(--text2); padding: 0 20px 8px; font-style: italic; height: 24px; }
+
+    /* ── Input Area ── */
+    .chat-input-area { background: var(--bg2); border-top: 1px solid var(--border); padding: 16px 20px; flex-shrink: 0; }
+    .chat-input-row { display: flex; align-items: flex-end; gap: 10px; background: var(--bg3); border: 1px solid var(--border); border-radius: 16px; padding: 8px 12px; }
+    .chat-input-row:focus-within { border-color: var(--accent); }
+    .attach-btn { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 1.2rem; padding: 4px; transition: color 0.2s; flex-shrink: 0; }
+    .attach-btn:hover { color: var(--accent); }
+    #msg-input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 0.9rem; resize: none; max-height: 120px; line-height: 1.5; font-family: inherit; }
+    #msg-input::placeholder { color: var(--text2); }
+    .send-btn { background: var(--accent); border: none; border-radius: 10px; padding: 8px 16px; color: white; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all 0.2s; flex-shrink: 0; }
+    .send-btn:hover { background: var(--accent2); }
+    #file-input { display: none; }
+    .upload-preview { display: none; align-items: center; gap: 10px; margin-bottom: 10px; background: var(--bg3); border-radius: 10px; padding: 8px 12px; }
+    .upload-preview.show { display: flex; }
+    .upload-preview img { max-height: 60px; border-radius: 6px; }
+    .upload-preview-name { font-size: 0.8rem; flex: 1; }
+    .upload-preview-remove { background: none; border: none; color: var(--red); cursor: pointer; font-size: 1rem; }
+
+    /* ── Empty State ── */
+    .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text2); gap: 16px; }
+    .empty-chat h2 { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+    .empty-chat p { font-size: 0.9rem; }
+
+    /* ── Modals ── */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 28px; width: 380px; max-width: 95vw; }
+    .modal h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; }
+    .modal-footer { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-footer .btn { margin-top: 0; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+    /* ── Toast ── */
+    #toast { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+    .toast-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 0.85rem; max-width: 280px; animation: slideIn 0.3s ease; }
+    .toast-item.success { border-color: var(--green); }
+    .toast-item.error { border-color: var(--red); }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
+
+    /* ── Responsive ── */
+    @media (max-width: 700px) {
+      .sidebar { width: 100%; position: absolute; z-index: 10; height: 100%; transition: transform 0.3s; }
+      .sidebar.hidden { transform: translateX(-100%); }
+      .back-btn { display: flex !important; }
+    }
+    .back-btn { display: none; background: none; border: none; color: var(--text2); cursor: pointer; font-size: 1.3rem; margin-right: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════ AUTH SCREEN ═══════════════ -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <h1>⚡ NexChat</h1>
+      <p>Chat cepat, aman, dan modern</p>
+    </div>
+
+    <!-- Step 1: Input phone/email -->
+    <div id="step-input">
+      <div class="auth-tabs">
+        <div class="auth-tab active" onclick="switchTab('phone')">📱 Nomor HP</div>
+        <div class="auth-tab" onclick="switchTab('email')">📧 Gmail</div>
+      </div>
+      <div class="form-group" id="name-group">
+        <label>Nama Lengkap</label>
+        <input type="text" id="name-input" placeholder="Masukkan nama kamu" />
+      </div>
+      <div class="form-group" id="phone-group">
+        <label>Nomor HP</label>
+        <input type="tel" id="phone-input" placeholder="+62812xxxxxxxx" />
+      </div>
+      <div class="form-group" id="email-group" style="display:none">
+        <label>Alamat Gmail</label>
+        <input type="email" id="email-input" placeholder="nama@gmail.com" />
+      </div>
+      <button class="btn btn-primary" onclick="sendOTP()">Kirim OTP</button>
+      <p class="auth-msg">Dengan mendaftar, kamu menyetujui syarat dan ketentuan NexChat.</p>
+    </div>
+
+    <!-- Step 2: OTP -->
+    <div id="step-otp" style="display:none">
+      <p style="color:var(--text2);font-size:0.85rem;margin-bottom:16px">Masukkan 6 digit OTP yang dikirim ke <strong id="otp-target" style="color:var(--text)"></strong></p>
+      <div id="dev-otp-hint" class="otp-hint" style="display:none">🔧 OTP (Mode Dev): <strong id="dev-otp-code"></strong></div>
+      <div class="form-group">
+        <label>Kode OTP</label>
+        <input type="text" id="otp-input" placeholder="123456" maxlength="6" style="letter-spacing:6px;font-size:1.3rem;text-align:center" />
+      </div>
+      <button class="btn btn-primary" onclick="verifyOTP()">Verifikasi & Masuk</button>
+      <button class="btn btn-secondary" onclick="backToInput()">← Kembali</button>
+      <p class="auth-msg">Tidak menerima OTP? <span style="color:var(--accent);cursor:pointer" onclick="sendOTP()">Kirim ulang</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN APP ═══════════════ -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-logo">⚡ NexChat</div>
+    <div class="topbar-user">
+      <span class="nex-id" id="my-nex-id"></span>
+      <div class="avatar" id="my-avatar"></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-actions">
+          <button class="icon-btn" onclick="openFindUser()">🔍 Cari ID</button>
+          <button class="icon-btn" onclick="openNewGroup()">👥 Grup Baru</button>
+        </div>
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="Cari chat..." oninput="filterChats(this.value)" />
+        </div>
+      </div>
+      <div class="chat-list" id="chat-list">
+        <div style="text-align:center;padding:40px;color:var(--text2);font-size:0.85rem">
+          <div style="font-size:2rem;margin-bottom:12px">💬</div>
+          Belum ada chat.<br>Cari teman pakai ID mereka!
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="chat-area" id="chat-area">
+      <div class="empty-chat" id="empty-chat">
+        <div style="font-size:4rem">⚡</div>
+        <h2>Selamat datang di NexChat</h2>
+        <p>Pilih chat atau cari teman pakai NexID</p>
+        <button class="btn btn-primary" style="width:auto;padding:10px 24px" onclick="openFindUser()">🔍 Cari Teman</button>
+      </div>
+      <div id="active-chat" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+        <div class="chat-header">
+          <button class="back-btn" onclick="closeMobileChat()">←</button>
+          <div class="avatar" id="chat-avatar"></div>
+          <div class="chat-header-info">
+            <div class="chat-header-name" id="chat-name"></div>
+            <div class="chat-header-status" id="chat-status"></div>
+          </div>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="typing-indicator" id="typing-indicator"></div>
+        <div class="chat-input-area">
+          <div class="upload-preview" id="upload-preview">
+            <span id="preview-content"></span>
+            <span class="upload-preview-name" id="preview-name"></span>
+            <button class="upload-preview-remove" onclick="clearUpload()">✕</button>
+          </div>
+          <div class="chat-input-row">
+            <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
+            <textarea id="msg-input" placeholder="Ketik pesan..." rows="1" onkeydown="handleKey(event)" oninput="onTyping()"></textarea>
+            <input type="file" id="file-input" accept="image/*,application/pdf,.zip,.txt,video/*,audio/*" onchange="handleFileSelect(event)" />
+            <button class="send-btn" onclick="sendMessage()">➤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Modal: Cari User ─── -->
+<div class="modal-overlay" id="find-user-modal">
+  <div class="modal">
+    <h3>🔍 Cari Teman</h3>
+    <p style="color:var(--text2);font-size:0.82rem;margin-bottom:16px">Masukkan NexID teman kamu (format: NCX-XXXXXX)</p>
+    <div class="form-group">
+      <label>NexID</label>
+      <input type="text" id="search-nexid" placeholder="NCX-XXXXXX" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')searchUser()" />
+    </div>
+    <div id="search-result"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('find-user-modal')">Batal</button>
+      <button class="btn btn-primary" onclick="searchUser()">Cari</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Modal: Grup Baru ─── -->
+<div class="modal-overlay" id="new-group-modal">
+  <div class="modal">
+    <h3>👥 Buat Grup Chat</h3>
+    <div class="form-group">
+      <label>Nama Grup</label>
+      <input type="text" id="group-name" placeholder="Nama grup..." />
+    </div>
+    <div class="form-group">
+      <label>Tambah Anggota (NexID, pisahkan koma)</label>
+      <input type="text" id="group-members" placeholder="NCX-ABC123, NCX-DEF456" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('new-group-modal')">Batal</button>
+      <button class="btn btn-primary" onclick="createGroup()">Buat Grup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+// CONFIG & STATE
+// ══════════════════════════════════════════════
+const BASE = '/api';
+let socket = null;
+let token = localStorage.getItem('ncx_token');
+let me = JSON.parse(localStorage.getItem('ncx_user') || 'null');
+let currentChatId = null;
+let currentChat = null;
+let allChats = [];
+let pendingFile = null;
+let typingTimer = null;
+let activeTab = 'phone';
+
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+function toast(msg, type = '') {
+  const t = document.getElementById('toast');
+  const el = document.createElement('div');
+  el.className = `toast-item ${type}`;
+  el.textContent = msg;
+  t.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function api(path, opts = {}) {
+  return fetch(BASE + path, {
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
+    ...opts,
+    body: opts.body ? (typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body)) : undefined
+  }).then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Terjadi kesalahan');
+    return data;
+  });
+}
+
+function formatTime(date) {
+  const d = new Date(date);
+  return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatChatTime(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return 'Baru saja';
+  if (diff < 3600000) return `${Math.floor(diff/60000)} mnt`;
+  if (diff < 86400000) return formatTime(d);
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+function avatarInitial(name) {
+  return (name || '?')[0].toUpperCase();
+}
+
+// ══════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.auth-tab').forEach((el, i) => {
+    el.classList.toggle('active', (tab === 'phone' && i === 0) || (tab === 'email' && i === 1));
+  });
+  document.getElementById('phone-group').style.display = tab === 'phone' ? '' : 'none';
+  document.getElementById('email-group').style.display = tab === 'email' ? '' : 'none';
+}
+
+async function sendOTP() {
+  const name = document.getElementById('name-input').value.trim();
+  const phone = document.getElementById('phone-input').value.trim();
+  const email = document.getElementById('email-input').value.trim();
+  const target = activeTab === 'phone' ? phone : email;
+  if (!target) { toast('Masukkan nomor HP atau email', 'error'); return; }
+  try {
+    const data = await api('/auth/send-otp', { method: 'POST', body: { name: name || 'User', phone: activeTab==='phone'?phone:undefined, email: activeTab==='email'?email:undefined } });
+    document.getElementById('otp-target').textContent = target;
+    if (data.devOtp) {
+      document.getElementById('dev-otp-hint').style.display = 'block';
+      document.getElementById('dev-otp-code').textContent = data.devOtp;
+    }
+    document.getElementById('step-input').style.display = 'none';
+    document.getElementById('step-otp').style.display = '';
+    toast('OTP berhasil dikirim!', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function verifyOTP() {
+  const otp = document.getElementById('otp-input').value.trim();
+  const phone = document.getElementById('phone-input').value.trim();
+  const email = document.getElementById('email-input').value.trim();
+  if (!otp) { toast('Masukkan kode OTP', 'error'); return; }
+  try {
+    const data = await api('/auth/verify-otp', { method: 'POST', body: { otp, phone: activeTab==='phone'?phone:undefined, email: activeTab==='email'?email:undefined } });
+    token = data.token;
+    me = data.user;
+    localStorage.setItem('ncx_token', token);
+    localStorage.setItem('ncx_user', JSON.stringify(me));
+    initApp();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function backToInput() {
+  document.getElementById('step-otp').style.display = 'none';
+  document.getElementById('step-input').style.display = '';
+  document.getElementById('dev-otp-hint').style.display = 'none';
+  document.getElementById('otp-input').value = '';
+}
+
+// ══════════════════════════════════════════════
+// APP INIT
+// ══════════════════════════════════════════════
+async function initApp() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+
+  document.getElementById('my-nex-id').textContent = me.nexId;
+  document.getElementById('my-avatar').textContent = avatarInitial(me.name);
+
+  await loadChats();
+  connectSocket();
+}
+
+function connectSocket() {
+  socket = io({ path: '/api/socket.io', auth: { token } });
+
+  socket.on('connect', () => console.log('Socket connected'));
+  socket.on('connect_error', (e) => console.error('Socket error:', e.message));
+
+  socket.on('message:new', ({ message, chatId }) => {
+    if (chatId === currentChatId) renderMessage(message);
+    updateChatLastMsg(chatId, message);
+    if (chatId !== currentChatId) {
+      const chat = allChats.find(c => c.chatId === chatId);
+      if (chat) toast(`💬 ${getChatName(chat)}: ${message.content || '📎 File'}`, '');
+    }
+  });
+
+  socket.on('user:status', ({ userId, isOnline, lastSeen }) => {
+    if (currentChat) {
+      const isPartner = currentChat.type === 'direct' &&
+        currentChat.participants.some(p => (p._id||p) === userId);
+      if (isPartner) updateChatStatus(isOnline, lastSeen);
+    }
+    // Update avatar badge in list
+    allChats.forEach(chat => {
+      if (chat.participants.some(p => (p._id||p) === userId)) {
+        refreshChatList();
+      }
+    });
+  });
+
+  socket.on('typing:start', ({ userId, chatId }) => {
+    if (chatId === currentChatId && userId !== me.id) {
+      document.getElementById('typing-indicator').textContent = 'sedang mengetik...';
+    }
+  });
+
+  socket.on('typing:stop', ({ chatId }) => {
+    if (chatId === currentChatId) {
+      document.getElementById('typing-indicator').textContent = '';
+    }
+  });
+
+  socket.on('messages:read', ({ chatId }) => {
+    if (chatId === currentChatId) {
+      document.querySelectorAll('.msg-time').forEach(el => {
+        if (el.dataset.chatId === chatId) el.textContent += ' ✓✓';
+      });
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+// CHATS
+// ══════════════════════════════════════════════
+async function loadChats() {
+  try {
+    const data = await api('/chats');
+    allChats = data.chats || [];
+    refreshChatList();
+  } catch (e) { console.error(e); }
+}
+
+function refreshChatList() {
+  renderChatList(allChats);
+}
+
+function renderChatList(chats) {
+  const el = document.getElementById('chat-list');
+  if (!chats.length) {
+    el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text2);font-size:0.85rem"><div style="font-size:2rem;margin-bottom:12px">💬</div>Belum ada chat.<br>Cari teman pakai ID mereka!</div>`;
+    return;
+  }
+  el.innerHTML = chats.map(chat => {
+    const name = getChatName(chat);
+    const initial = name[0].toUpperCase();
+    const partner = getPartner(chat);
+    const onlineDot = (chat.type === 'direct' && partner?.isOnline) ? '<div class="online-dot"></div>' : '';
+    const lastMsg = chat.lastMessage;
+    const lastText = lastMsg ? (lastMsg.type==='text' ? lastMsg.content : '📎 ' + (lastMsg.type==='image'?'Gambar':'File')) : 'Mulai chat';
+    const time = chat.lastMessageAt ? formatChatTime(chat.lastMessageAt) : '';
+    return `
+      <div class="chat-item ${chat.chatId===currentChatId?'active':''}" onclick="openChat('${chat.chatId}')">
+        <div style="position:relative">
+          <div class="avatar">${initial}</div>
+          ${onlineDot ? `<div class="online-dot" style="position:absolute;bottom:0;right:0"></div>` : ''}
+        </div>
+        <div class="chat-info">
+          <div class="chat-name">${name}</div>
+          <div class="chat-last">${lastText}</div>
+        </div>
+        <div class="chat-meta">
+          <div class="chat-time">${time}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterChats(q) {
+  const filtered = allChats.filter(c => getChatName(c).toLowerCase().includes(q.toLowerCase()));
+  renderChatList(filtered);
+}
+
+function getChatName(chat) {
+  if (chat.type === 'group') return chat.groupName || 'Grup Chat';
+  const partner = getPartner(chat);
+  return partner?.name || 'Chat';
+}
+
+function getPartner(chat) {
+  if (!chat.participants) return null;
+  return chat.participants.find(p => {
+    const id = p._id || p;
+    return String(id) !== String(me.id);
+  });
+}
+
+async function openChat(chatId) {
+  currentChatId = chatId;
+  currentChat = allChats.find(c => c.chatId === chatId);
+  if (!currentChat) return;
+
+  // Mobile: hide sidebar
+  if (window.innerWidth <= 700) {
+    document.getElementById('sidebar').classList.add('hidden');
+  }
+
+  document.getElementById('empty-chat').style.display = 'none';
+  const activeEl = document.getElementById('active-chat');
+  activeEl.style.display = 'flex';
+
+  const name = getChatName(currentChat);
+  document.getElementById('chat-avatar').textContent = name[0].toUpperCase();
+  document.getElementById('chat-name').textContent = name;
+
+  if (currentChat.type === 'direct') {
+    const partner = getPartner(currentChat);
+    updateChatStatus(partner?.isOnline, partner?.lastSeen);
+  } else {
+    document.getElementById('chat-status').textContent = `${currentChat.participants?.length || 0} anggota`;
+    document.getElementById('chat-status').className = 'chat-header-status';
+  }
+
+  socket?.emit('chat:join', { chatId });
+  socket?.emit('messages:read', { chatId });
+
+  refreshChatList();
+  await loadMessages(chatId);
+}
+
+function updateChatStatus(isOnline, lastSeen) {
+  const el = document.getElementById('chat-status');
+  if (isOnline) {
+    el.textContent = 'Online';
+    el.className = 'chat-header-status online';
+  } else {
+    const ago = lastSeen ? `Terakhir: ${formatChatTime(lastSeen)}` : 'Offline';
+    el.textContent = ago;
+    el.className = 'chat-header-status';
+  }
+}
+
+function updateChatLastMsg(chatId, message) {
+  const chat = allChats.find(c => c.chatId === chatId);
+  if (chat) {
+    chat.lastMessage = message;
+    chat.lastMessageAt = message.createdAt;
+    allChats.sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+    refreshChatList();
+  }
+}
+
+// ══════════════════════════════════════════════
+// MESSAGES
+// ══════════════════════════════════════════════
+async function loadMessages(chatId) {
+  try {
+    const data = await api(`/chats/${chatId}/messages`);
+    const container = document.getElementById('chat-messages');
+    container.innerHTML = '';
+    (data.messages || []).forEach(renderMessage);
+    container.scrollTop = container.scrollHeight;
+  } catch (e) { toast('Gagal memuat pesan', 'error'); }
+}
+
+function renderMessage(msg) {
+  const container = document.getElementById('chat-messages');
+  const isMine = String(msg.sender?._id || msg.sender) === String(me.id);
+  const sender = msg.sender;
+  const senderName = sender?.name || 'User';
+
+  let contentHtml = '';
+  if (msg.type === 'image') {
+    contentHtml = `<img class="msg-image" src="${msg.fileUrl}" alt="gambar" onclick="window.open('${msg.fileUrl}','_blank')" />${msg.content ? `<div class="msg-text">${msg.content}</div>` : ''}`;
+  } else if (msg.type === 'file') {
+    contentHtml = `<a class="msg-file" href="${msg.fileUrl}" target="_blank" download>
+      <span class="msg-file-icon">📄</span>
+      <div class="msg-file-info"><div class="msg-file-name">${msg.fileName||'File'}</div><div class="msg-file-size">${formatFileSize(msg.fileSize)}</div></div>
+    </a>`;
+  } else {
+    contentHtml = `<div class="msg-text">${escHtml(msg.content)}</div>`;
+  }
+
+  const div = document.createElement('div');
+  div.className = `msg ${isMine ? 'me' : ''}`;
+  div.innerHTML = `
+    ${!isMine ? `<div class="msg-avatar">${avatarInitial(senderName)}</div>` : ''}
+    <div class="msg-content">
+      ${(!isMine && currentChat?.type === 'group') ? `<div class="msg-sender">${senderName}</div>` : ''}
+      ${contentHtml}
+      <div class="msg-time">${formatTime(msg.createdAt)}</div>
+    </div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// ══════════════════════════════════════════════
+// SEND MESSAGE
+// ══════════════════════════════════════════════
+async function sendMessage() {
+  if (!currentChatId) return;
+  const input = document.getElementById('msg-input');
+  const content = input.value.trim();
+
+  if (pendingFile) {
+    await sendFileMessage(content);
+    return;
+  }
+
+  if (!content) return;
+
+  socket?.emit('message:send', { chatId: currentChatId, content, type: 'text' });
+  input.value = '';
+  input.style.height = 'auto';
+  socket?.emit('typing:stop', { chatId: currentChatId });
+}
+
+async function sendFileMessage(caption = '') {
+  if (!pendingFile || !currentChatId) return;
+  try {
+    const form = new FormData();
+    form.append('file', pendingFile);
+    const resp = await fetch(BASE + '/upload', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+
+    socket?.emit('message:send', {
+      chatId: currentChatId,
+      content: caption,
+      type: data.type,
+      fileUrl: data.fileUrl,
+      fileName: data.fileName,
+      fileSize: data.fileSize
+    });
+    clearUpload();
+    document.getElementById('msg-input').value = '';
+  } catch (e) { toast('Gagal upload: ' + e.message, 'error'); }
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+  // Auto-resize textarea
+  const ta = e.target;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+
+function onTyping() {
+  if (!currentChatId || !socket) return;
+  socket.emit('typing:start', { chatId: currentChatId });
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => socket.emit('typing:stop', { chatId: currentChatId }), 2000);
+}
+
+// ══════════════════════════════════════════════
+// FILE UPLOAD
+// ══════════════════════════════════════════════
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) { toast('File terlalu besar (max 20MB)', 'error'); return; }
+  pendingFile = file;
+  const preview = document.getElementById('upload-preview');
+  const name = document.getElementById('preview-name');
+  const content = document.getElementById('preview-content');
+  preview.classList.add('show');
+  name.textContent = `${file.name} (${formatFileSize(file.size)})`;
+  if (file.type.startsWith('image/')) {
+    const url = URL.createObjectURL(file);
+    content.innerHTML = `<img src="${url}" style="max-height:60px;border-radius:6px">`;
+  } else {
+    content.textContent = '📄';
+  }
+  e.target.value = '';
+}
+
+function clearUpload() {
+  pendingFile = null;
+  document.getElementById('upload-preview').classList.remove('show');
+  document.getElementById('preview-content').innerHTML = '';
+  document.getElementById('preview-name').textContent = '';
+}
+
+// ══════════════════════════════════════════════
+// FIND USER
+// ══════════════════════════════════════════════
+function openFindUser() {
+  document.getElementById('search-nexid').value = '';
+  document.getElementById('search-result').innerHTML = '';
+  document.getElementById('find-user-modal').classList.add('show');
+}
+
+async function searchUser() {
+  const nexId = document.getElementById('search-nexid').value.trim();
+  if (!nexId) { toast('Masukkan NexID', 'error'); return; }
+  try {
+    const data = await api(`/users/search/${nexId}`);
+    const user = data.user;
+    document.getElementById('search-result').innerHTML = `
+      <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-top:12px;display:flex;align-items:center;gap:12px">
+        <div class="avatar">${avatarInitial(user.name)}</div>
+        <div style="flex:1">
+          <div style="font-weight:700">${user.name}</div>
+          <div style="font-size:0.75rem;color:var(--accent)">${user.nexId}</div>
+          <div style="font-size:0.75rem;color:${user.isOnline?'var(--green)':'var(--text2)'}">${user.isOnline?'Online':'Offline'}</div>
+        </div>
+        <button class="btn btn-primary" style="width:auto;padding:8px 16px" onclick="startDirect('${user._id}')">Chat</button>
+      </div>`;
+  } catch (e) {
+    document.getElementById('search-result').innerHTML = `<p style="color:var(--red);font-size:0.85rem;margin-top:10px">${e.message}</p>`;
+  }
+}
+
+async function startDirect(userId) {
+  try {
+    const data = await api('/chats/direct', { method: 'POST', body: { targetUserId: userId } });
+    closeModal('find-user-modal');
+    const chat = data.chat;
+    if (!allChats.find(c => c.chatId === chat.chatId)) allChats.unshift(chat);
+    else { const i = allChats.findIndex(c => c.chatId === chat.chatId); allChats[i] = chat; }
+    refreshChatList();
+    openChat(chat.chatId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ══════════════════════════════════════════════
+// GROUP CHAT
+// ══════════════════════════════════════════════
+function openNewGroup() {
+  document.getElementById('group-name').value = '';
+  document.getElementById('group-members').value = '';
+  document.getElementById('new-group-modal').classList.add('show');
+}
+
+async function createGroup() {
+  const groupName = document.getElementById('group-name').value.trim();
+  const membersRaw = document.getElementById('group-members').value.trim();
+  if (!groupName) { toast('Nama grup diperlukan', 'error'); return; }
+
+  try {
+    // Resolve NexIDs to user IDs
+    const nexIds = membersRaw.split(',').map(s => s.trim()).filter(Boolean);
+    const participantIds = [];
+    for (const nexId of nexIds) {
+      try {
+        const d = await api(`/users/search/${nexId}`);
+        participantIds.push(d.user._id);
+      } catch { toast(`User ${nexId} tidak ditemukan`, 'error'); }
+    }
+
+    const data = await api('/chats/group', { method: 'POST', body: { groupName, participantIds } });
+    closeModal('new-group-modal');
+    allChats.unshift(data.chat);
+    refreshChatList();
+    openChat(data.chat.chatId);
+    toast('Grup berhasil dibuat!', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ══════════════════════════════════════════════
+// MODAL & MISC
+// ══════════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('show');
+  }
+});
+
+function closeMobileChat() {
+  document.getElementById('sidebar').classList.remove('hidden');
+  document.getElementById('active-chat').style.display = 'none';
+  document.getElementById('empty-chat').style.display = 'flex';
+  currentChatId = null;
+  refreshChatList();
+}
+
+// ══════════════════════════════════════════════
+// STARTUP
+// ══════════════════════════════════════════════
+if (token && me) {
+  initApp();
+}
+</script>
+</body>
+</html>
