@@ -30,26 +30,16 @@ router.get("/", async (req: AuthRequest, res: Response): Promise<void> => {
 router.post("/direct", async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { targetUserId } = req.body;
-    if (!targetUserId) {
-      res.status(400).json({ error: "targetUserId diperlukan" });
-      return;
-    }
+    if (!targetUserId) { res.status(400).json({ error: "targetUserId diperlukan" }); return; }
 
     const targetUser = await User.findById(targetUserId);
-    if (!targetUser) {
-      res.status(404).json({ error: "User tidak ditemukan" });
-      return;
-    }
+    if (!targetUser) { res.status(404).json({ error: "User tidak ditemukan" }); return; }
 
     const chatId = generateChatId(req.userId!, targetUserId);
     let chat = await Chat.findOne({ chatId });
 
     if (!chat) {
-      chat = new Chat({
-        chatId,
-        type: "direct",
-        participants: [req.userId, targetUserId],
-      });
+      chat = new Chat({ chatId, type: "direct", participants: [req.userId, targetUserId] });
       await chat.save();
     }
 
@@ -75,13 +65,7 @@ router.post("/group", async (req: AuthRequest, res: Response): Promise<void> => 
     );
     const chatId = generateGroupId();
 
-    const chat = new Chat({
-      chatId,
-      type: "group",
-      groupName,
-      participants: allParticipants,
-      groupAdmin: req.userId,
-    });
+    const chat = new Chat({ chatId, type: "group", groupName, participants: allParticipants, groupAdmin: req.userId });
     await chat.save();
     await chat.populate("participants", "nexId name avatar isOnline lastSeen");
 
@@ -99,14 +83,8 @@ router.get("/:chatId/messages", async (req: AuthRequest, res: Response): Promise
     const page = parseInt(req.query.page as string) || 1;
     const limit = 50;
 
-    const chat = await Chat.findOne({
-      chatId,
-      participants: new mongoose.Types.ObjectId(req.userId!),
-    });
-    if (!chat) {
-      res.status(404).json({ error: "Chat tidak ditemukan" });
-      return;
-    }
+    const chat = await Chat.findOne({ chatId, participants: new mongoose.Types.ObjectId(req.userId!) });
+    if (!chat) { res.status(404).json({ error: "Chat tidak ditemukan" }); return; }
 
     const messages = await Message.find({ chatId })
       .populate("sender", "nexId name avatar")
@@ -126,25 +104,14 @@ router.delete("/:chatId/messages/:messageId", async (req: AuthRequest, res: Resp
   try {
     const { chatId, messageId } = req.params;
 
-    const chat = await Chat.findOne({
-      chatId,
-      participants: new mongoose.Types.ObjectId(req.userId!),
-    });
-    if (!chat) {
-      res.status(404).json({ error: "Chat tidak ditemukan" });
-      return;
-    }
+    const chat = await Chat.findOne({ chatId, participants: new mongoose.Types.ObjectId(req.userId!) });
+    if (!chat) { res.status(404).json({ error: "Chat tidak ditemukan" }); return; }
 
     const message = await Message.findOne({ _id: messageId, chatId });
-    if (!message) {
-      res.status(404).json({ error: "Pesan tidak ditemukan" });
-      return;
-    }
+    if (!message) { res.status(404).json({ error: "Pesan tidak ditemukan" }); return; }
 
-    // Hanya pengirim yang bisa hapus pesannya sendiri
     if (String(message.sender) !== req.userId) {
-      res.status(403).json({ error: "Kamu hanya bisa menghapus pesanmu sendiri" });
-      return;
+      res.status(403).json({ error: "Kamu hanya bisa menghapus pesanmu sendiri" }); return;
     }
 
     message.isDeleted = true;
@@ -158,6 +125,43 @@ router.delete("/:chatId/messages/:messageId", async (req: AuthRequest, res: Resp
   }
 });
 
+// Pin / unpin pesan
+router.post("/:chatId/pin", async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { chatId } = req.params;
+    const { messageId } = req.body;
+
+    const chat = await Chat.findOne({ chatId, participants: new mongoose.Types.ObjectId(req.userId!) });
+    if (!chat) { res.status(404).json({ error: "Chat tidak ditemukan" }); return; }
+
+    if (!messageId) {
+      // Unpin
+      chat.pinnedMessage = undefined;
+      await chat.save();
+      res.json({ success: true, pinned: null });
+      return;
+    }
+
+    const message = await Message.findOne({ _id: messageId, chatId })
+      .populate("sender", "name");
+    if (!message) { res.status(404).json({ error: "Pesan tidak ditemukan" }); return; }
+
+    const pinInfo = {
+      messageId: String(message._id),
+      content: message.isDeleted ? "Pesan dihapus" : (message.content || (message.type !== "text" ? `[${message.type}]` : "")),
+      senderName: (message.sender as any)?.name || "User",
+      type: message.type,
+    };
+
+    chat.pinnedMessage = pinInfo;
+    await chat.save();
+
+    res.json({ success: true, pinned: pinInfo });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal pin pesan" });
+  }
+});
+
 // Tambah anggota ke grup
 router.post("/:chatId/members", async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -165,10 +169,7 @@ router.post("/:chatId/members", async (req: AuthRequest, res: Response): Promise
     const { userId } = req.body;
 
     const chat = await Chat.findOne({ chatId, type: "group", groupAdmin: req.userId });
-    if (!chat) {
-      res.status(403).json({ error: "Hanya admin yang bisa menambah anggota" });
-      return;
-    }
+    if (!chat) { res.status(403).json({ error: "Hanya admin yang bisa menambah anggota" }); return; }
 
     if (!chat.participants.map(String).includes(userId)) {
       chat.participants.push(new mongoose.Types.ObjectId(userId));

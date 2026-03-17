@@ -21,11 +21,20 @@ NexChat - Real-time chat application built with Node.js, Express, Socket.IO, Mon
 
 1. Login via phone number or email with OTP verification
 2. Auto-generated unique ID format: NCX-XXXXXX
-3. 1-on-1 direct chat
-4. Group chat with admin controls
-5. Real-time online/offline status
-6. File and image uploads (up to 20MB)
-7. Search friends by NexID
+3. 1-on-1 direct chat and group chat with admin controls
+4. Real-time online/offline status
+5. File and image uploads (up to 20MB)
+6. Search friends by NexID
+7. Voice messages (MediaRecorder API, audio/webm)
+8. WebRTC peer-to-peer audio and video calls
+9. Message deletion (sender only, soft-delete with isDeleted flag)
+10. Profile settings with avatar photo upload
+11. Story/Status 24 jam (text + photo, auto-expire via MongoDB TTL index)
+12. Reply/Quote pesan (replyTo embedded in Message model)
+13. Forward pesan ke chat lain
+14. Pin pesan penting (displayed in banner at top of chat)
+15. Push Notifications via Web Push API (VAPID keys, service worker)
+16. Tema gelap dan terang (persisted in localStorage)
 
 ## Structure
 

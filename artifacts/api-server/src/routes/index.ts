@@ -6,6 +6,8 @@ import authRoutes from "./auth.js";
 import userRoutes from "./users.js";
 import chatRoutes from "./chats.js";
 import uploadRoutes from "./upload.js";
+import storyRoutes from "./stories.js";
+import pushRoutes from "./push.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,6 +17,8 @@ router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
 router.use("/chats", chatRoutes);
 router.use("/upload", uploadRoutes);
+router.use("/stories", storyRoutes);
+router.use("/push", pushRoutes);
 
 // Serve uploaded files
 router.get("/uploads/:filename", (req, res) => {
@@ -40,6 +44,18 @@ router.get("/app", (_req, res) => {
     res.sendFile(htmlPath);
   } else {
     res.status(404).send("Frontend not found");
+  }
+});
+
+// Serve service worker
+router.get("/sw.js", (_req, res) => {
+  const swPath = path.join(publicDir, "sw.js");
+  if (existsSync(swPath)) {
+    res.setHeader("Content-Type", "application/javascript");
+    res.setHeader("Service-Worker-Allowed", "/");
+    res.sendFile(swPath);
+  } else {
+    res.status(404).send("Not found");
   }
 });
 

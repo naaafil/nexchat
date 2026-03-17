@@ -10,6 +10,12 @@ export interface IChat extends Document {
   groupAdmin?: mongoose.Types.ObjectId;
   lastMessage?: mongoose.Types.ObjectId;
   lastMessageAt?: Date;
+  pinnedMessage?: {
+    messageId: string;
+    content: string;
+    senderName: string;
+    type: string;
+  };
   createdAt: Date;
 }
 
@@ -23,6 +29,12 @@ const ChatSchema = new Schema<IChat>(
     groupAdmin: { type: Schema.Types.ObjectId, ref: "User" },
     lastMessage: { type: Schema.Types.ObjectId, ref: "Message" },
     lastMessageAt: { type: Date },
+    pinnedMessage: {
+      messageId: { type: String },
+      content: { type: String },
+      senderName: { type: String },
+      type: { type: String },
+    },
   },
   { timestamps: true }
 );

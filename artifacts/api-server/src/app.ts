@@ -8,6 +8,7 @@ import router from "./routes/index.js";
 import { User } from "./models/User.js";
 import { Message } from "./models/Message.js";
 import { Chat } from "./models/Chat.js";
+import { sendPushToUser } from "./routes/push.js";
 import jwt from "jsonwebtoken";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,10 +17,7 @@ const app: Express = express();
 const httpServer = createServer(app);
 
 const io = new SocketServer(httpServer, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
+  cors: { origin: "*", methods: ["GET", "POST"] },
   path: "/api/socket.io",
 });
 
@@ -59,7 +57,6 @@ io.on("connection", async (socket) => {
 
   onlineUsers.set(userId, socket.id);
 
-  // Update status online
   await User.findByIdAndUpdate(userId, { isOnline: true, lastSeen: new Date() });
   io.emit("user:status", { userId, isOnline: true });
 
@@ -69,10 +66,10 @@ io.on("connection", async (socket) => {
     socket.join(chat.chatId);
   }
 
-  // Kirim pesan
+  // ── Kirim pesan ──
   socket.on("message:send", async (data) => {
     try {
-      const { chatId, content, type = "text", fileUrl, fileName, fileSize } = data;
+      const { chatId, content, type = "text", fileUrl, fileName, fileSize, duration, replyTo, forwardedFrom } = data;
 
       const chat = await Chat.findOne({ chatId, participants: userId });
       if (!chat) return;
@@ -85,19 +82,37 @@ io.on("connection", async (socket) => {
         fileUrl,
         fileName,
         fileSize,
+        duration,
         readBy: [userId],
+        replyTo: replyTo || undefined,
+        forwardedFrom: forwardedFrom || undefined,
       });
       await message.save();
       await message.populate("sender", "nexId name avatar");
 
-      // Update lastMessage di chat
       await Chat.findOneAndUpdate(
         { chatId },
         { lastMessage: message._id, lastMessageAt: new Date() }
       );
 
-      // Broadcast ke semua di room
       io.to(chatId).emit("message:new", { message, chatId });
+
+      // Push notification ke peserta yang offline
+      const sender = await User.findById(userId).select("name");
+      for (const participantId of chat.participants) {
+        const pid = String(participantId);
+        if (pid !== userId && !onlineUsers.has(pid)) {
+          sendPushToUser(pid, {
+            title: `NexChat - ${sender?.name || "Pesan baru"}`,
+            body: message.isDeleted ? "Pesan dihapus" :
+              type === "text" ? (content || "") :
+              type === "voice" ? "🎤 Voice message" :
+              type === "image" ? "📷 Gambar" : "📎 File",
+            chatId,
+            icon: "/icon.png",
+          });
+        }
+      }
     } catch (error) {
       console.error("Message send error:", error);
       socket.emit("error", { message: "Gagal mengirim pesan" });
@@ -108,7 +123,6 @@ io.on("connection", async (socket) => {
   socket.on("typing:start", ({ chatId }) => {
     socket.to(chatId).emit("typing:start", { userId, chatId });
   });
-
   socket.on("typing:stop", ({ chatId }) => {
     socket.to(chatId).emit("typing:stop", { userId, chatId });
   });
@@ -131,56 +145,49 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // Hapus pesan (broadcast ke room)
+  // Hapus pesan
   socket.on("message:delete", ({ chatId, messageId }) => {
     io.to(chatId).emit("message:deleted", { chatId, messageId });
   });
 
+  // Pin pesan (broadcast ke room)
+  socket.on("message:pin", ({ chatId, pinned }) => {
+    io.to(chatId).emit("message:pinned", { chatId, pinned });
+  });
+
+  // Story baru
+  socket.on("story:new", ({ story }) => {
+    io.emit("story:new", { story });
+  });
+
   // ── WebRTC Signaling ──
-  // Initiate call
   socket.on("call:offer", ({ targetUserId, offer, callType }) => {
     const targetSocket = onlineUsers.get(targetUserId);
     if (targetSocket) {
-      io.to(targetSocket).emit("call:incoming", {
-        callerId: userId,
-        offer,
-        callType,
-      });
+      io.to(targetSocket).emit("call:incoming", { callerId: userId, offer, callType });
     } else {
       socket.emit("call:unavailable", { targetUserId });
     }
   });
 
-  // Answer call
   socket.on("call:answer", ({ callerId, answer }) => {
     const callerSocket = onlineUsers.get(callerId);
-    if (callerSocket) {
-      io.to(callerSocket).emit("call:answered", { answer });
-    }
+    if (callerSocket) io.to(callerSocket).emit("call:answered", { answer });
   });
 
-  // ICE candidate
   socket.on("call:ice-candidate", ({ targetUserId, candidate }) => {
     const targetSocket = onlineUsers.get(targetUserId);
-    if (targetSocket) {
-      io.to(targetSocket).emit("call:ice-candidate", { candidate, fromUserId: userId });
-    }
+    if (targetSocket) io.to(targetSocket).emit("call:ice-candidate", { candidate, fromUserId: userId });
   });
 
-  // Reject call
   socket.on("call:reject", ({ callerId }) => {
     const callerSocket = onlineUsers.get(callerId);
-    if (callerSocket) {
-      io.to(callerSocket).emit("call:rejected", { by: userId });
-    }
+    if (callerSocket) io.to(callerSocket).emit("call:rejected", { by: userId });
   });
 
-  // End call
   socket.on("call:end", ({ targetUserId }) => {
     const targetSocket = onlineUsers.get(targetUserId);
-    if (targetSocket) {
-      io.to(targetSocket).emit("call:ended", { by: userId });
-    }
+    if (targetSocket) io.to(targetSocket).emit("call:ended", { by: userId });
   });
 
   // Disconnect

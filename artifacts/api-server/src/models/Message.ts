@@ -12,6 +12,16 @@ export interface IMessage extends Document {
   duration?: number;
   readBy: mongoose.Types.ObjectId[];
   isDeleted: boolean;
+  replyTo?: {
+    messageId: string;
+    content: string;
+    senderName: string;
+    type: string;
+  };
+  forwardedFrom?: {
+    name: string;
+    content: string;
+  };
   createdAt: Date;
 }
 
@@ -27,6 +37,16 @@ const MessageSchema = new Schema<IMessage>(
     duration: { type: Number },
     readBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
     isDeleted: { type: Boolean, default: false },
+    replyTo: {
+      messageId: { type: String },
+      content: { type: String },
+      senderName: { type: String },
+      type: { type: String },
+    },
+    forwardedFrom: {
+      name: { type: String },
+      content: { type: String },
+    },
   },
   { timestamps: true }
 );
