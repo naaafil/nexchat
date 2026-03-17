@@ -19,22 +19,20 @@ const httpServer = createServer(app);
 const io = new SocketServer(httpServer, {
   cors: { origin: "*", methods: ["GET", "POST"] },
   path: "/api/socket.io",
+  transports: ["websocket", "polling"],
 });
 
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
 app.use("/api", router);
 
-// Serve frontend
+// Serve frontend & static
 const publicDir = path.join(__dirname, "../public");
 app.use(express.static(publicDir));
-app.get("/", (_req, res) => {
-  res.sendFile(path.join(publicDir, "index.html"));
-});
+app.get("/", (_req, res) => { res.sendFile(path.join(publicDir, "index.html")); });
 
-// Socket.IO Auth Middleware
+// Socket.IO Auth
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token;
@@ -43,159 +41,159 @@ io.use(async (socket, next) => {
     const decoded = jwt.verify(token, secret) as { userId: string };
     (socket as any).userId = decoded.userId;
     next();
-  } catch {
-    next(new Error("Token tidak valid"));
-  }
+  } catch { next(new Error("Token tidak valid")); }
 });
 
-// Track online users: userId -> socketId
+// userId -> socketId
 const onlineUsers = new Map<string, string>();
 
 io.on("connection", async (socket) => {
   const userId = (socket as any).userId as string;
-  console.log(`User connected: ${userId}`);
-
   onlineUsers.set(userId, socket.id);
 
   await User.findByIdAndUpdate(userId, { isOnline: true, lastSeen: new Date() });
   io.emit("user:status", { userId, isOnline: true });
 
   // Join semua room chat user
-  const chats = await Chat.find({ participants: userId });
-  for (const chat of chats) {
-    socket.join(chat.chatId);
-  }
+  const userChats = await Chat.find({ participants: userId });
+  for (const chat of userChats) socket.join(chat.chatId);
+
+  // Mark pending messages as delivered for this user upon reconnect
+  try {
+    const pendingMsgs = await Message.find({
+      chatId: { $in: userChats.map(c => c.chatId) },
+      sender: { $ne: userId },
+      deliveredTo: { $ne: userId },
+    }).select("_id chatId");
+
+    for (const msg of pendingMsgs) {
+      await Message.findByIdAndUpdate(msg._id, { $addToSet: { deliveredTo: userId } });
+      io.to(msg.chatId).emit("message:delivered", { messageId: String(msg._id), chatId: msg.chatId, userId });
+    }
+  } catch {}
 
   // ── Kirim pesan ──
   socket.on("message:send", async (data) => {
     try {
       const { chatId, content, type = "text", fileUrl, fileName, fileSize, duration, replyTo, forwardedFrom } = data;
-
       const chat = await Chat.findOne({ chatId, participants: userId });
       if (!chat) return;
 
+      // Find online recipients for immediate delivery tracking
+      const onlineRecipients: string[] = [];
+      for (const pid of chat.participants) {
+        const pidStr = String(pid);
+        if (pidStr !== userId && onlineUsers.has(pidStr)) {
+          onlineRecipients.push(pidStr);
+        }
+      }
+
       const message = new Message({
-        chatId,
-        sender: userId,
-        content: content || "",
-        type,
-        fileUrl,
-        fileName,
-        fileSize,
-        duration,
+        chatId, sender: userId,
+        content: content || "", type,
+        fileUrl, fileName, fileSize, duration,
         readBy: [userId],
+        deliveredTo: [userId, ...onlineRecipients],
         replyTo: replyTo || undefined,
         forwardedFrom: forwardedFrom || undefined,
       });
       await message.save();
       await message.populate("sender", "nexId name avatar");
 
-      await Chat.findOneAndUpdate(
-        { chatId },
-        { lastMessage: message._id, lastMessageAt: new Date() }
-      );
+      await Chat.findOneAndUpdate({ chatId }, { lastMessage: message._id, lastMessageAt: new Date() });
 
       io.to(chatId).emit("message:new", { message, chatId });
 
-      // Push notification ke peserta yang offline
+      // Emit delivery confirmation for online recipients
+      for (const rid of onlineRecipients) {
+        io.to(chatId).emit("message:delivered", {
+          messageId: String(message._id), chatId, userId: rid
+        });
+      }
+
+      // Push for offline recipients
       const sender = await User.findById(userId).select("name");
       for (const participantId of chat.participants) {
         const pid = String(participantId);
         if (pid !== userId && !onlineUsers.has(pid)) {
           sendPushToUser(pid, {
-            title: `NexChat - ${sender?.name || "Pesan baru"}`,
-            body: message.isDeleted ? "Pesan dihapus" :
-              type === "text" ? (content || "") :
-              type === "voice" ? "🎤 Voice message" :
-              type === "image" ? "📷 Gambar" : "📎 File",
-            chatId,
-            icon: "/icon.png",
+            title: `${sender?.name || "NexChat"}`,
+            body: type === "text" ? (content || "Pesan baru") :
+              type === "voice" ? "🎤 Pesan suara" :
+              type === "image" ? "📷 Foto" : "📎 File",
+            chatId, icon: "/favicon.ico",
           });
         }
       }
     } catch (error) {
-      console.error("Message send error:", error);
+      console.error("message:send error:", error);
       socket.emit("error", { message: "Gagal mengirim pesan" });
     }
   });
 
-  // Typing indicator
-  socket.on("typing:start", ({ chatId }) => {
-    socket.to(chatId).emit("typing:start", { userId, chatId });
-  });
-  socket.on("typing:stop", ({ chatId }) => {
-    socket.to(chatId).emit("typing:stop", { userId, chatId });
-  });
+  // Typing
+  socket.on("typing:start", ({ chatId }) => socket.to(chatId).emit("typing:start", { userId, chatId }));
+  socket.on("typing:stop", ({ chatId }) => socket.to(chatId).emit("typing:stop", { userId, chatId }));
 
-  // Join room chat baru
-  socket.on("chat:join", ({ chatId }) => {
-    socket.join(chatId);
-  });
+  // Join room
+  socket.on("chat:join", ({ chatId }) => socket.join(chatId));
 
-  // Mark messages as read
+  // Messages read
   socket.on("messages:read", async ({ chatId }) => {
     try {
-      await Message.updateMany(
-        { chatId, readBy: { $ne: userId } },
-        { $push: { readBy: userId } }
-      );
-      io.to(chatId).emit("messages:read", { chatId, userId });
-    } catch (error) {
-      console.error("Read error:", error);
-    }
+      const unread = await Message.find({ chatId, sender: { $ne: userId }, readBy: { $ne: userId } }).select("_id");
+      if (unread.length === 0) return;
+      const ids = unread.map(m => m._id);
+      await Message.updateMany({ _id: { $in: ids } }, { $addToSet: { readBy: userId } });
+      io.to(chatId).emit("messages:read", { chatId, userId, messageIds: ids.map(String) });
+    } catch (e) { console.error("messages:read error:", e); }
   });
 
-  // Hapus pesan
-  socket.on("message:delete", ({ chatId, messageId }) => {
-    io.to(chatId).emit("message:deleted", { chatId, messageId });
-  });
+  // Delete
+  socket.on("message:delete", ({ chatId, messageId }) => io.to(chatId).emit("message:deleted", { chatId, messageId }));
 
-  // Pin pesan (broadcast ke room)
-  socket.on("message:pin", ({ chatId, pinned }) => {
-    io.to(chatId).emit("message:pinned", { chatId, pinned });
-  });
+  // Pin
+  socket.on("message:pin", ({ chatId, pinned }) => io.to(chatId).emit("message:pinned", { chatId, pinned }));
 
-  // Story baru
-  socket.on("story:new", ({ story }) => {
-    io.emit("story:new", { story });
-  });
+  // Story
+  socket.on("story:new", () => io.emit("story:new", {}));
 
   // ── WebRTC Signaling ──
   socket.on("call:offer", ({ targetUserId, offer, callType }) => {
-    const targetSocket = onlineUsers.get(targetUserId);
-    if (targetSocket) {
-      io.to(targetSocket).emit("call:incoming", { callerId: userId, offer, callType });
+    const tgt = onlineUsers.get(targetUserId);
+    if (tgt) {
+      io.to(tgt).emit("call:incoming", { callerId: userId, offer, callType });
     } else {
       socket.emit("call:unavailable", { targetUserId });
     }
   });
 
   socket.on("call:answer", ({ callerId, answer }) => {
-    const callerSocket = onlineUsers.get(callerId);
-    if (callerSocket) io.to(callerSocket).emit("call:answered", { answer });
+    const tgt = onlineUsers.get(callerId);
+    if (tgt) io.to(tgt).emit("call:answered", { answer });
   });
 
   socket.on("call:ice-candidate", ({ targetUserId, candidate }) => {
-    const targetSocket = onlineUsers.get(targetUserId);
-    if (targetSocket) io.to(targetSocket).emit("call:ice-candidate", { candidate, fromUserId: userId });
+    const tgt = onlineUsers.get(targetUserId);
+    if (tgt) io.to(tgt).emit("call:ice-candidate", { candidate, fromUserId: userId });
   });
 
   socket.on("call:reject", ({ callerId }) => {
-    const callerSocket = onlineUsers.get(callerId);
-    if (callerSocket) io.to(callerSocket).emit("call:rejected", { by: userId });
+    const tgt = onlineUsers.get(callerId);
+    if (tgt) io.to(tgt).emit("call:rejected", { by: userId });
   });
 
   socket.on("call:end", ({ targetUserId }) => {
-    const targetSocket = onlineUsers.get(targetUserId);
-    if (targetSocket) io.to(targetSocket).emit("call:ended", { by: userId });
+    const tgt = onlineUsers.get(targetUserId);
+    if (tgt) io.to(tgt).emit("call:ended", { by: userId });
   });
 
   // Disconnect
   socket.on("disconnect", async () => {
     onlineUsers.delete(userId);
-    await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: new Date() });
-    io.emit("user:status", { userId, isOnline: false, lastSeen: new Date() });
-    console.log(`User disconnected: ${userId}`);
+    const lastSeen = new Date();
+    await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen });
+    io.emit("user:status", { userId, isOnline: false, lastSeen });
   });
 });
 

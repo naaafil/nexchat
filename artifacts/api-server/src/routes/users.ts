@@ -35,7 +35,7 @@ router.put("/me", async (req: AuthRequest, res: Response): Promise<void> => {
 // Cari user berdasarkan NexID
 router.get("/search/:nexId", async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { nexId } = req.params;
+    const nexId = String(req.params.nexId);
     const user = await User.findOne({ nexId: nexId.toUpperCase() }).select(
       "nexId name avatar isOnline lastSeen"
     );

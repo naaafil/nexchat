@@ -11,6 +11,7 @@ export interface IMessage extends Document {
   fileSize?: number;
   duration?: number;
   readBy: mongoose.Types.ObjectId[];
+  deliveredTo: mongoose.Types.ObjectId[];
   isDeleted: boolean;
   replyTo?: {
     messageId: string;
@@ -36,6 +37,7 @@ const MessageSchema = new Schema<IMessage>(
     fileSize: { type: Number },
     duration: { type: Number },
     readBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    deliveredTo: [{ type: Schema.Types.ObjectId, ref: "User" }],
     isDeleted: { type: Boolean, default: false },
     replyTo: {
       messageId: { type: String },
