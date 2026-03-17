@@ -5,11 +5,13 @@ export interface IMessage extends Document {
   chatId: string;
   sender: mongoose.Types.ObjectId;
   content: string;
-  type: "text" | "image" | "file";
+  type: "text" | "image" | "file" | "voice";
   fileUrl?: string;
   fileName?: string;
   fileSize?: number;
+  duration?: number;
   readBy: mongoose.Types.ObjectId[];
+  isDeleted: boolean;
   createdAt: Date;
 }
 
@@ -18,11 +20,13 @@ const MessageSchema = new Schema<IMessage>(
     chatId: { type: String, required: true, index: true },
     sender: { type: Schema.Types.ObjectId, ref: "User", required: true },
     content: { type: String, default: "" },
-    type: { type: String, enum: ["text", "image", "file"], default: "text" },
+    type: { type: String, enum: ["text", "image", "file", "voice"], default: "text" },
     fileUrl: { type: String },
     fileName: { type: String },
     fileSize: { type: Number },
+    duration: { type: Number },
     readBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

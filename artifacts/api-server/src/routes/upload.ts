@@ -29,7 +29,8 @@ const upload = multer({
     const allowed = [
       "image/jpeg", "image/png", "image/gif", "image/webp",
       "application/pdf", "application/zip", "text/plain",
-      "video/mp4", "audio/mpeg",
+      "video/mp4", "audio/mpeg", "audio/webm", "audio/ogg",
+      "audio/wav", "audio/mp4",
     ];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);

@@ -131,6 +131,58 @@ io.on("connection", async (socket) => {
     }
   });
 
+  // Hapus pesan (broadcast ke room)
+  socket.on("message:delete", ({ chatId, messageId }) => {
+    io.to(chatId).emit("message:deleted", { chatId, messageId });
+  });
+
+  // ── WebRTC Signaling ──
+  // Initiate call
+  socket.on("call:offer", ({ targetUserId, offer, callType }) => {
+    const targetSocket = onlineUsers.get(targetUserId);
+    if (targetSocket) {
+      io.to(targetSocket).emit("call:incoming", {
+        callerId: userId,
+        offer,
+        callType,
+      });
+    } else {
+      socket.emit("call:unavailable", { targetUserId });
+    }
+  });
+
+  // Answer call
+  socket.on("call:answer", ({ callerId, answer }) => {
+    const callerSocket = onlineUsers.get(callerId);
+    if (callerSocket) {
+      io.to(callerSocket).emit("call:answered", { answer });
+    }
+  });
+
+  // ICE candidate
+  socket.on("call:ice-candidate", ({ targetUserId, candidate }) => {
+    const targetSocket = onlineUsers.get(targetUserId);
+    if (targetSocket) {
+      io.to(targetSocket).emit("call:ice-candidate", { candidate, fromUserId: userId });
+    }
+  });
+
+  // Reject call
+  socket.on("call:reject", ({ callerId }) => {
+    const callerSocket = onlineUsers.get(callerId);
+    if (callerSocket) {
+      io.to(callerSocket).emit("call:rejected", { by: userId });
+    }
+  });
+
+  // End call
+  socket.on("call:end", ({ targetUserId }) => {
+    const targetSocket = onlineUsers.get(targetUserId);
+    if (targetSocket) {
+      io.to(targetSocket).emit("call:ended", { by: userId });
+    }
+  });
+
   // Disconnect
   socket.on("disconnect", async () => {
     onlineUsers.delete(userId);

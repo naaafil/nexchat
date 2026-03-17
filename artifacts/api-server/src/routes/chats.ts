@@ -121,6 +121,43 @@ router.get("/:chatId/messages", async (req: AuthRequest, res: Response): Promise
   }
 });
 
+// Hapus pesan
+router.delete("/:chatId/messages/:messageId", async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { chatId, messageId } = req.params;
+
+    const chat = await Chat.findOne({
+      chatId,
+      participants: new mongoose.Types.ObjectId(req.userId!),
+    });
+    if (!chat) {
+      res.status(404).json({ error: "Chat tidak ditemukan" });
+      return;
+    }
+
+    const message = await Message.findOne({ _id: messageId, chatId });
+    if (!message) {
+      res.status(404).json({ error: "Pesan tidak ditemukan" });
+      return;
+    }
+
+    // Hanya pengirim yang bisa hapus pesannya sendiri
+    if (String(message.sender) !== req.userId) {
+      res.status(403).json({ error: "Kamu hanya bisa menghapus pesanmu sendiri" });
+      return;
+    }
+
+    message.isDeleted = true;
+    message.content = "";
+    message.fileUrl = undefined;
+    await message.save();
+
+    res.json({ success: true, messageId });
+  } catch (error) {
+    res.status(500).json({ error: "Gagal menghapus pesan" });
+  }
+});
+
 // Tambah anggota ke grup
 router.post("/:chatId/members", async (req: AuthRequest, res: Response): Promise<void> => {
   try {
